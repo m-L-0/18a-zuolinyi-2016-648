@@ -1,38 +1,139 @@
-# Clustering Schoolwork 
+# Clustering Schoolwork
 
-以谱聚类或者马尔科夫聚类对**鸢尾花数据集**进行处理，得到类似如下图所示（Normalized Cut），并输出正确率。（由于鸢尾花数据集是带标签的，所以聚类结果可以用正确率衡量）。
+1. 导入包和数据集
 
-![aaa](http://imgsrc.baidu.com/forum/w%3D580/sign=6fcdbe49b1315c6043956be7bdb0cbe6/486b55fbb2fb4316e21168262da4462309f7d362.jpg)
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+import networkx as nx
+from sklearn.datasets import load_iris
+from sklearn.cluster import KMeans
+```
 
-## 任务列表
+```python
+iris = load_iris()
+data = iris.data
+target = iris.target
+```
 
-1. 将鸢尾花数据集画成图的形式。
-2. 确定一个合适的**阈值**，只有两个样本之间的相似度大于该阈值时，这两个样本之间才有一条边。
-3. 求取带权**邻接矩阵**。
-4. 根据邻接矩阵进行聚类。
-5. 将聚类结果可视化，重新转换成图的形式，其中每一个簇应该用一种形状表示，比如分别用圆圈、三角和矩阵表示各个簇。
-6. 求得分簇正确率
-7. 完成代码的描述文档
+2. 鸢尾花数据集可视化
 
-## 评分细则
+```python
+sepal_length_list = data[:, 0]
+sepal_width_list = data[:, 1]
 
-任务列表中每项每点均为评分项，评分细则中分值该项对应的总分，根据完成情况不同而具体设定。
+setosa_index_list = iris.target == 0
+versicolor_index_list = iris.target == 1
+virginica_index_list = iris.target == 2
 
-| 序号 | 内容           | 分值（分） |
-| ---- | -------------- | ---------- |
-| 1    | 任务列表-1要求 | 10         |
-| 2    | 任务列表-2要求 | 10         |
-| 3    | 任务列表-3要求 | 15         |
-| 4    | 任务列表-4要求 | 25         |
-| 5    | 任务列表-5要求 | 20         |
-| 6    | 任务列表-6要求 | 10         |
-| 7    | 任务列表-7要求 | 10         |
+plt.scatter(sepal_length_list[setosa_index_list], 
+            sepal_width_list[setosa_index_list], color="red", marker='o', label="setosa")
+plt.scatter(sepal_length_list[versicolor_index_list], 
+            sepal_width_list[versicolor_index_list], color="blue", marker="x", label="versicolor")
+plt.scatter(sepal_length_list[virginica_index_list], 
+            sepal_width_list[virginica_index_list],color="green", marker="+", label="virginica")
 
-附：
+plt.legend(loc="best", title="iris type")
+plt.xlabel("sepal_length (cm)")
+plt.ylabel("sepal_width (cm)")
 
-1. 以上分值为基础分，根据代码质量及注释质量会酌情增减。
-2. 抄袭，一律按0分计算。
-3. 代码说明文档中要讲明调参的过程及原因。
-4. 聚类算法需要自己实现，不能调用sklearn中现成的模型。
-5. 算法正确率自行根据鸢尾花数据集计算并输出，描述文档给出说明为什么可以达到这种正确率，比如正确率90%，并说明错误的10%为什么会错。
+plt.show()
+```
+
+3. 计算欧式距离、距离矩阵、邻接矩阵和归一化的拉普拉斯矩阵
+
+```python
+# 计算欧式距离
+def euclidDistance(x1, x2, sqrt_flag = True):
+    res = np.sum((x1 - x2)**2)
+    if sqrt_flag:
+        res = np.sqrt(res)
+    return res
+
+# 计算距离矩阵
+def calEuclidDistanceMatrix(X): 
+    X = np.array(X)
+    S = np.zeros((len(X), len(X)))
+    for i in range(len(X)):
+        for j in range(i+1, len(X)): 
+            S[i][j] = 1.0 * euclidDistance(X[i], X[j]) 
+            S[j][i] = S[i][j] 
+    return S
+
+# 邻接矩阵
+def myKNN(S, k, sigma = 1):
+    N = len(S)
+    A = np.zeros((N, N))
+    for i in range(N):
+        dist_with_index = zip(S[i], range(N))
+        dist_with_index = sorted(dist_with_index, key = lambda x:x[0])
+        neighbours_id = [dist_with_index[m][1] for m in range(k+1)]
+        for j in neighbours_id:
+            A[i][j] = np.exp(-S[i][j]/ 2/ sigma/ sigma)
+            A[j][i] = A[i][j]
+    return A
+
+
+# 归一化的拉普拉斯矩阵
+def calLaplacianMatrix(adjacentMatrix):
+    degreeMatrix = np.sum(adjacentMatrix, axis = 1)
+    laplacianMatrix = np.diag(degreeMatrix) - adjacentMatrix#
+    sqrtDegreeMatrix = np.diag(1.0 / (degreeMatrix ** (0.5)))
+    return np.dot(np.dot(sqrtDegreeMatrix, laplacianMatrix), sqrtDegreeMatrix)
+```
+
+```python
+# 距离矩阵
+S = calEuclidDistanceMatrix(data)
+
+# 邻接矩阵
+A = myKNN(S,10)
+
+# 标准化的拉普拉斯矩阵
+Laplacian = calLaplacianMatrix(A)
+```
+
+4. 计算特征值和特征向量
+
+```python
+cra, V = np.linalg.eig(Laplacian)
+cras = zip(cra, range(150))
+cras = sorted(cras, key=lambda cras:cras[0])
+H = np.vstack([V[:,i] for (v, i) in cras[:6]]).T
+```
+
+5. 进行聚类
+
+```python
+x = KMeans(n_clusters = 3, n_init = 13, random_state = 11).fit(H)
+count = 0
+for i in range(150):
+    if target[i] == x.labels_[i]:
+        count = count + 1
+print(count/ 150)
+```
+
+6. 聚类结果可视化
+
+```python
+g = nx.Graph()
+for i in range(150):
+    g.add_node(i)
+edgs = []
+for i in range(150):
+    for j in range(150):
+        if(A[i][j] > 0):
+            edgs.append((i,j))
+colors = []
+g.add_edges_from(edgs)
+for i in range(150):
+    if(target[i] == 0):
+        colors.append('blue')
+    elif(target[i] == 1):
+        colors.append('red')
+    else:
+        colors.append('green')
+nx.draw(g,pos = nx.circular_layout(g), node_color = colors, node_size = 15, width = 0.5)
+plt.show()
+```
 
